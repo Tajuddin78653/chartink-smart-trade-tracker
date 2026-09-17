@@ -91,12 +91,13 @@ services:
     runtime: image
     image:
       url: docker.io/n8nio/n8n:latest
-    healthCheckPath: /
     envVars:
       - key: N8N_HOST
         value: 0.0.0.0
       - key: N8N_PORT
         value: 10000
+      - key: N8N_SKIP_WEBHOOK_DEREGISTRATION_SHUTDOWN
+        value: "true"
       - key: N8N_PROTOCOL
         value: https
       - key: N8N_BASIC_AUTH_ACTIVE
