@@ -17,6 +17,7 @@ const { initRedis }         = require('./db/redis');
 const { startPriceMonitor } = require('./services/priceMonitor');
 const { authenticate, authorize } = require('./middleware/auth');
 const { apiLimiter, webhookLimiter, authLimiter } = require('./middleware/rateLimiter');
+const { startKeepAlive } = require('./services/keepAlive');
 
 // ── Logger ────────────────────────────────────────────────
 const logger = winston.createLogger({
@@ -92,6 +93,7 @@ const PORT = process.env.PORT || 4000;
     await initDB();
     await initRedis();
     await startPriceMonitor(io);
+    if (process.env.NODE_ENV === 'production') startKeepAlive();
     server.listen(PORT, () => logger.info(`🚀 Backend running on port ${PORT}`));
   } catch (err) {
     logger.error('Startup failed:', err);

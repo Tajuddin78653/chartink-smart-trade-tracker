@@ -62,6 +62,12 @@ services:
         sync: false
       - key: ZERODHA_ACCESS_TOKEN
         sync: false
+      - key: BACKEND_URL
+        value: https://chartink-backend.onrender.com/api/health
+      - key: FRONTEND_URL
+        value: https://chartink-frontend.onrender.com
+      - key: N8N_URL
+        value: https://chartink-n8n.onrender.com/healthz
 
   # ── Frontend (Next.js 15) ───────────────────────────────
   - type: web
