@@ -91,18 +91,12 @@ services:
     runtime: docker
     image:
       url: docker.io/n8nio/n8n:latest
-    healthCheckPath: /healthz
+    healthCheckPath: /
     envVars:
       - key: N8N_HOST
-        fromService:
-          name: chartink-n8n
-          type: web
-          property: host
+        value: 0.0.0.0
       - key: N8N_PORT
-        fromService:
-          name: chartink-n8n
-          type: web
-          property: port
+        value: 10000
       - key: N8N_PROTOCOL
         value: https
       - key: N8N_BASIC_AUTH_ACTIVE
