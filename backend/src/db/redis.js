@@ -4,12 +4,17 @@ let client = null;
 
 const initRedis = async () => {
   if (!process.env.REDIS_URL) {
-    console.warn('⚠️  REDIS_URL not set — running without Redis cache (in-memory fallback)');
+    console.warn('⚠️  REDIS_URL not set — running without Redis cache');
     return;
   }
   try {
-    client = createClient({ url: process.env.REDIS_URL });
-    client.on('error', (err) => console.error('Redis error:', err));
+    // Upstash uses rediss:// (TLS) — need socket config
+    const isUpstash = process.env.REDIS_URL.startsWith('rediss://');
+    client = createClient({
+      url: process.env.REDIS_URL,
+      socket: isUpstash ? { tls: true, rejectUnauthorized: false } : {}
+    });
+    client.on('error', (err) => console.error('Redis error:', err.message));
     await client.connect();
     console.log('✅ Redis connected');
   } catch (err) {
