@@ -88,7 +88,7 @@ services:
     name: chartink-n8n
     region: singapore
     plan: free
-    runtime: docker
+    runtime: image
     image:
       url: docker.io/n8nio/n8n:latest
     healthCheckPath: /
