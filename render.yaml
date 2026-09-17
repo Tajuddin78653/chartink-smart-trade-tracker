@@ -5,10 +5,17 @@
 # ============================================================
 
 databases:
-  # ── PostgreSQL ─────────────────────────────────────────
+  # ── PostgreSQL (app data) ──────────────────────────────
   - name: chartink-postgres
     databaseName: chartink_tracker
     user: cstt_user
+    plan: free
+    region: singapore
+
+  # ── PostgreSQL (N8N internal) ──────────────────────────
+  - name: chartink-n8n-postgres
+    databaseName: n8n_db
+    user: n8n_user
     plan: free
     region: singapore
 
@@ -110,23 +117,23 @@ services:
         value: postgresdb
       - key: DB_POSTGRESDB_HOST
         fromDatabase:
-          name: chartink-postgres
+          name: chartink-n8n-postgres
           property: host
       - key: DB_POSTGRESDB_PORT
         fromDatabase:
-          name: chartink-postgres
+          name: chartink-n8n-postgres
           property: port
       - key: DB_POSTGRESDB_DATABASE
         fromDatabase:
-          name: chartink-postgres
+          name: chartink-n8n-postgres
           property: database
       - key: DB_POSTGRESDB_USER
         fromDatabase:
-          name: chartink-postgres
+          name: chartink-n8n-postgres
           property: user
       - key: DB_POSTGRESDB_PASSWORD
         fromDatabase:
-          name: chartink-postgres
+          name: chartink-n8n-postgres
           property: password
       - key: N8N_ENCRYPTION_KEY
         generateValue: true
