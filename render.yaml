@@ -89,7 +89,8 @@ services:
     region: singapore
     plan: free
     runtime: docker
-    dockerfilePath: ./n8n/Dockerfile
+    image:
+      url: docker.io/n8nio/n8n:latest
     healthCheckPath: /healthz
     envVars:
       - key: N8N_HOST
