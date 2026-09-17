@@ -1,6 +1,7 @@
 # ============================================================
 # Chartink Smart Trade Tracker — Render.com IaC
 # Deploy everything with one click from GitHub
+# Note: Redis via Upstash (free external) — set REDIS_URL manually
 # ============================================================
 
 databases:
@@ -8,11 +9,6 @@ databases:
   - name: chartink-postgres
     databaseName: chartink_tracker
     user: cstt_user
-    plan: free
-    region: singapore
-
-  # ── Redis ──────────────────────────────────────────────
-  - name: chartink-redis
     plan: free
     region: singapore
 
@@ -37,10 +33,7 @@ services:
           name: chartink-postgres
           property: connectionString
       - key: REDIS_URL
-        fromService:
-          name: chartink-redis
-          type: redis
-          property: connectionString
+        sync: false   # Set this manually: get free Redis from https://upstash.com
       - key: JWT_SECRET
         generateValue: true
       - key: FRONTEND_URL
