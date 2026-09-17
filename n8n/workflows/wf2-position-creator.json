@@ -1,0 +1,102 @@
+{
+  "name": "WF2 - Position Creator",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "seconds", "secondsInterval": 10 }] }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 10 Seconds",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM alerts WHERE processed = false ORDER BY created_at ASC LIMIT 10",
+        "additionalFields": {}
+      },
+      "id": "fetch-unprocessed",
+      "name": "Fetch Unprocessed Alerts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "credentials": { "postgres": { "id": "postgres-creds", "name": "PostgreSQL" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [{ "value1": "={{ $items().length }}", "operation": "larger", "value2": 0 }]
+        }
+      },
+      "id": "has-alerts",
+      "name": "Has Alerts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const alert = $input.first().json;\nconst entryPrice = parseFloat(alert.ltp);\n\n// Get settings from DB (use defaults if not available)\nconst targetPct   = 0.5;\nconst slPct       = 1.5;\n\nconst sl     = parseFloat((entryPrice * (1 - slPct / 100)).toFixed(2));\nconst target = parseFloat((entryPrice * (1 + targetPct / 100)).toFixed(2));\n\n// Generate Trade ID\nconst now = new Date();\nconst datePart = now.toISOString().slice(0,10).replace(/-/g,'');\nconst rand = Math.floor(Math.random() * 999).toString().padStart(3,'0');\nconst tradeId = `TRD${datePart}${rand}`;\n\nreturn [{\n  json: {\n    alert_id:       alert.id,\n    trade_id:       tradeId,\n    symbol:         alert.symbol,\n    exchange:       alert.exchange,\n    signal:         alert.signal,\n    entry_price:    entryPrice,\n    entry_time:     alert.alert_time || new Date().toISOString(),\n    sl:             sl,\n    initial_target: target,\n    current_target: target,\n    highest_price:  entryPrice,\n    scan_name:      alert.scan_name,\n    status:         'OPEN'\n  }\n}];"
+      },
+      "id": "calculate-levels",
+      "name": "Calculate SL & Target",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "trades",
+        "columns": "trade_id,alert_id,symbol,exchange,signal,entry_price,entry_time,sl,initial_target,current_target,highest_price,scan_name,status",
+        "additionalFields": {}
+      },
+      "id": "create-trade",
+      "name": "Create Trade Record",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1120, 200],
+      "credentials": { "postgres": { "id": "postgres-creds", "name": "PostgreSQL" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO trade_events (trade_id, event_type, price, notes) SELECT id, 'ENTRY_EXECUTED', entry_price, 'Position opened via N8N' FROM trades WHERE trade_id = '{{ $json.trade_id }}'",
+        "additionalFields": {}
+      },
+      "id": "log-entry-event",
+      "name": "Log Entry Event",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1340, 200],
+      "credentials": { "postgres": { "id": "postgres-creds", "name": "PostgreSQL" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE alerts SET processed = true WHERE id = '{{ $('Fetch Unprocessed Alerts').item.json.id }}'",
+        "additionalFields": {}
+      },
+      "id": "mark-processed",
+      "name": "Mark Alert Processed",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1560, 200],
+      "credentials": { "postgres": { "id": "postgres-creds", "name": "PostgreSQL" } }
+    }
+  ],
+  "connections": {
+    "Every 10 Seconds":       { "main": [[{ "node": "Fetch Unprocessed Alerts", "type": "main", "index": 0 }]] },
+    "Fetch Unprocessed Alerts":{ "main": [[{ "node": "Has Alerts?",            "type": "main", "index": 0 }]] },
+    "Has Alerts?":            { "main": [[{ "node": "Calculate SL & Target",   "type": "main", "index": 0 }], []] },
+    "Calculate SL & Target":  { "main": [[{ "node": "Create Trade Record",     "type": "main", "index": 0 }]] },
+    "Create Trade Record":    { "main": [[{ "node": "Log Entry Event",         "type": "main", "index": 0 }]] },
+    "Log Entry Event":        { "main": [[{ "node": "Mark Alert Processed",    "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "tags": ["chartink", "position", "trade"]
+}

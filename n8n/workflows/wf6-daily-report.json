@@ -1,0 +1,80 @@
+{
+  "name": "WF6 - Daily Report Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "35 15 * * 1-5" }]
+        }
+      },
+      "id": "daily-trigger",
+      "name": "3:35 PM IST Weekdays",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) FILTER (WHERE status IN ('STOP_LOSS_HIT','CLOSED')) AS total_trades, COUNT(*) FILTER (WHERE pnl > 0 AND status IN ('STOP_LOSS_HIT','CLOSED')) AS winning_trades, COUNT(*) FILTER (WHERE pnl < 0 AND status IN ('STOP_LOSS_HIT','CLOSED')) AS losing_trades, COALESCE(ROUND(SUM(pnl) FILTER (WHERE status IN ('STOP_LOSS_HIT','CLOSED'))::NUMERIC,2),0) AS total_pnl, COALESCE(MAX(pnl) FILTER (WHERE status IN ('STOP_LOSS_HIT','CLOSED')),0) AS best_trade, COALESCE(MIN(pnl) FILTER (WHERE status IN ('STOP_LOSS_HIT','CLOSED')),0) AS worst_trade, COALESCE(ROUND(AVG(pnl_pct) FILTER (WHERE pnl > 0 AND status IN ('STOP_LOSS_HIT','CLOSED'))::NUMERIC,2),0) AS avg_gain_pct, COALESCE(ROUND(AVG(pnl_pct) FILTER (WHERE pnl < 0 AND status IN ('STOP_LOSS_HIT','CLOSED'))::NUMERIC,2),0) AS avg_loss_pct FROM trades WHERE DATE(entry_time AT TIME ZONE 'Asia/Kolkata') = CURRENT_DATE",
+        "additionalFields": {}
+      },
+      "id": "daily-stats",
+      "name": "Fetch Daily Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "credentials": { "postgres": { "id": "postgres-creds", "name": "PostgreSQL" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $input.first().json;\nconst total   = parseInt(s.total_trades) || 0;\nconst wins    = parseInt(s.winning_trades) || 0;\nconst losses  = parseInt(s.losing_trades) || 0;\nconst winRate = total > 0 ? ((wins / total) * 100).toFixed(1) : '0.0';\nconst date    = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day:'2-digit', month:'short', year:'numeric' });\n\nconst pnlEmoji = parseFloat(s.total_pnl) >= 0 ? '🟢' : '🔴';\n\nconst report = `📊 *DAILY TRADE REPORT*\n📅 ${date}\n${'─'.repeat(28)}\n📈 Total Trades: ${total}\n✅ Winners: ${wins} | ❌ Losers: ${losses}\n🎯 Win Rate: ${winRate}%\n${'─'.repeat(28)}\n${pnlEmoji} Total P&L: ₹${parseFloat(s.total_pnl).toFixed(2)}\n🏆 Best Trade: +₹${parseFloat(s.best_trade).toFixed(2)}\n💸 Worst Trade: ₹${parseFloat(s.worst_trade).toFixed(2)}\n📊 Avg Gain: +${s.avg_gain_pct}%\n📉 Avg Loss: ${s.avg_loss_pct}%\n${'─'.repeat(28)}\n🤖 Chartink Smart Trade Tracker`;\n\nreturn [{ json: { ...s, report, win_rate: winRate, date } }];"
+      },
+      "id": "format-report",
+      "name": "Format Daily Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $vars.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.report }}",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "send-report-telegram",
+      "name": "Send Report to Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [900, 300],
+      "credentials": { "telegramApi": { "id": "telegram-creds", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "notifications",
+        "columns": "channel,event_type,message,status,sent_at",
+        "additionalFields": {}
+      },
+      "id": "save-report",
+      "name": "Save Report to DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1120, 300],
+      "credentials": { "postgres": { "id": "postgres-creds", "name": "PostgreSQL" } }
+    }
+  ],
+  "connections": {
+    "3:35 PM IST Weekdays": { "main": [[{ "node": "Fetch Daily Stats",         "type": "main", "index": 0 }]] },
+    "Fetch Daily Stats":    { "main": [[{ "node": "Format Daily Report",       "type": "main", "index": 0 }]] },
+    "Format Daily Report":  { "main": [[{ "node": "Send Report to Telegram",   "type": "main", "index": 0 }]] },
+    "Send Report to Telegram":{ "main": [[{ "node": "Save Report to DB",       "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "tags": ["chartink", "report", "daily"]
+}

@@ -1,0 +1,119 @@
+{
+  "name": "WF1 - Chartink Alert Receiver",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chartink-alert",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Chartink Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst { symbol, exchange, ltp, signal, scan_name, alert_time } = body;\n\n// Validate required fields\nif (!symbol || !ltp) {\n  throw new Error('Invalid payload: symbol and ltp are required');\n}\n\n// Check trading hours (IST 09:15 - 15:30)\nconst now = new Date();\nconst ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));\nconst hours = ist.getHours();\nconst mins = ist.getMinutes();\nconst current = hours * 60 + mins;\nconst marketOpen = 9 * 60 + 15;\nconst marketClose = 15 * 60 + 30;\n\nif (current < marketOpen || current > marketClose) {\n  return [{ json: { skipped: true, reason: 'Outside trading hours', symbol } }];\n}\n\nreturn [{\n  json: {\n    symbol: symbol.toUpperCase().trim(),\n    exchange: exchange || 'NSE',\n    ltp: parseFloat(ltp),\n    signal: signal || 'BUY',\n    scan_name: scan_name || 'Chartink Alert',\n    alert_time: alert_time || new Date().toISOString(),\n    raw_payload: JSON.stringify(body),\n    validated: true\n  }\n}];"
+      },
+      "id": "validate-payload",
+      "name": "Validate & Parse Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.skipped }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-skipped",
+      "name": "Is Skipped?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "alerts",
+        "columns": "symbol,exchange,ltp,signal,scan_name,alert_time,raw_payload,processed",
+        "additionalFields": {}
+      },
+      "id": "save-alert",
+      "name": "Save Alert to DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [900, 200],
+      "credentials": { "postgres": { "id": "postgres-creds", "name": "PostgreSQL" } }
+    },
+    {
+      "parameters": {
+        "url": "=http://backend:4000/api/webhook/chartink",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "symbol",     "value": "={{ $json.symbol }}" },
+            { "name": "exchange",   "value": "={{ $json.exchange }}" },
+            { "name": "ltp",        "value": "={{ $json.ltp }}" },
+            { "name": "signal",     "value": "={{ $json.signal }}" },
+            { "name": "scan_name",  "value": "={{ $json.scan_name }}" },
+            { "name": "alert_time", "value": "={{ $json.alert_time }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "forward-to-backend",
+      "name": "Forward to Backend API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"success\": true, \"message\": \"Alert received\", \"symbol\": \"{{ $('Validate & Parse Payload').item.json.symbol }}\" }"
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"skipped\": true, \"reason\": \"Outside trading hours\" }"
+      },
+      "id": "respond-skipped",
+      "name": "Respond Skipped",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 420]
+    }
+  ],
+  "connections": {
+    "Chartink Webhook":           { "main": [[{ "node": "Validate & Parse Payload", "type": "main", "index": 0 }]] },
+    "Validate & Parse Payload":   { "main": [[{ "node": "Is Skipped?", "type": "main", "index": 0 }]] },
+    "Is Skipped?": {
+      "main": [
+        [{ "node": "Respond Skipped",     "type": "main", "index": 0 }],
+        [{ "node": "Save Alert to DB",    "type": "main", "index": 0 }]
+      ]
+    },
+    "Save Alert to DB":    { "main": [[{ "node": "Forward to Backend API", "type": "main", "index": 0 }]] },
+    "Forward to Backend API": { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "tags": ["chartink", "webhook", "alerts"]
+}

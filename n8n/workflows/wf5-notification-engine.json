@@ -1,0 +1,89 @@
+{
+  "name": "WF5 - Notification Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "seconds", "secondsInterval": 15 }] }
+      },
+      "id": "notif-trigger",
+      "name": "Every 15 Seconds",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT n.*, t.symbol, t.entry_price, t.exit_price, t.pnl, t.pnl_pct, t.sl, t.current_target, t.scan_name FROM notifications n JOIN trades t ON t.id = n.trade_id WHERE n.status = 'pending' ORDER BY n.created_at ASC LIMIT 20",
+        "additionalFields": {}
+      },
+      "id": "fetch-pending",
+      "name": "Fetch Pending Notifications",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "credentials": { "postgres": { "id": "postgres-creds", "name": "PostgreSQL" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [{ "value1": "={{ $items().length }}", "operation": "larger", "value2": 0 }]
+        }
+      },
+      "id": "has-pending",
+      "name": "Has Pending?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const n = $input.first().json;\nlet message = '';\n\nswitch(n.event_type) {\n  case 'ENTRY_CREATED':\n    message = `🟢 *BUY SIGNAL*\\n📌 Symbol: *${n.symbol}*\\n💰 Entry: ₹${parseFloat(n.entry_price).toFixed(2)}\\n🛑 SL: ₹${parseFloat(n.sl).toFixed(2)}\\n🎯 Target: ₹${parseFloat(n.current_target).toFixed(2)}\\n📊 Scanner: ${n.scan_name}`;\n    break;\n  case 'TARGET_HIT':\n    message = `🎯 *TARGET HIT*\\n📌 ${n.symbol}\\n✅ Profit: +${parseFloat(n.pnl_pct).toFixed(2)}%\\n💰 P&L: +₹${parseFloat(n.pnl).toFixed(2)}\\n🔄 Trailing mode activated`;\n    break;\n  case 'STOP_LOSS_HIT':\n    message = `🔴 *STOP LOSS HIT*\\n📌 ${n.symbol}\\n📉 Loss: ${parseFloat(n.pnl_pct).toFixed(2)}%\\n💸 P&L: ₹${parseFloat(n.pnl).toFixed(2)}\\n🏁 Exit: ₹${parseFloat(n.exit_price || 0).toFixed(2)}`;\n    break;\n  case 'TRAILING':\n    message = `📈 *TRAILING PROFIT LOCKED*\\n📌 ${n.symbol}\\n🔒 Gain locked: +${parseFloat(n.pnl_pct).toFixed(2)}%`;\n    break;\n  default:\n    message = `📊 Trade Update: ${n.symbol} — ${n.event_type}`;\n}\n\nreturn [{ json: { ...n, formatted_message: message } }];"
+      },
+      "id": "format-message",
+      "name": "Format Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $vars.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.formatted_message }}",
+        "additionalFields": { "parse_mode": "Markdown" }
+      },
+      "id": "send-telegram",
+      "name": "Send Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1120, 100],
+      "credentials": { "telegramApi": { "id": "telegram-creds", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE notifications SET status='sent', sent_at=NOW() WHERE id='{{ $json.id }}'",
+        "additionalFields": {}
+      },
+      "id": "mark-sent",
+      "name": "Mark as Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1340, 200],
+      "credentials": { "postgres": { "id": "postgres-creds", "name": "PostgreSQL" } }
+    }
+  ],
+  "connections": {
+    "Every 15 Seconds":           { "main": [[{ "node": "Fetch Pending Notifications", "type": "main", "index": 0 }]] },
+    "Fetch Pending Notifications":{ "main": [[{ "node": "Has Pending?",               "type": "main", "index": 0 }]] },
+    "Has Pending?":               { "main": [[{ "node": "Format Message",             "type": "main", "index": 0 }], []] },
+    "Format Message":             { "main": [[{ "node": "Send Telegram",              "type": "main", "index": 0 }]] },
+    "Send Telegram":              { "main": [[{ "node": "Mark as Sent",               "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "tags": ["chartink", "notification", "telegram"]
+}

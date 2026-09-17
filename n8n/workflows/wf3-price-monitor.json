@@ -1,0 +1,132 @@
+{
+  "name": "WF3 - Price Monitor & SL/Target Checker",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "seconds", "secondsInterval": 5 }] }
+      },
+      "id": "schedule-5s",
+      "name": "Every 5 Seconds",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT t.*, s.target_pct, s.sl_pct, s.trailing_pct FROM trades t CROSS JOIN settings s WHERE t.status IN ('OPEN','TRAILING','TARGET_HIT') ORDER BY t.entry_time",
+        "additionalFields": {}
+      },
+      "id": "fetch-active-trades",
+      "name": "Fetch Active Trades",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "credentials": { "postgres": { "id": "postgres-creds", "name": "PostgreSQL" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [{ "value1": "={{ $items().length }}", "operation": "larger", "value2": 0 }]
+        }
+      },
+      "id": "has-active",
+      "name": "Has Active Trades?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://backend:4000/api/prices/{{ $json.symbol }}",
+        "options": { "timeout": 4000 }
+      },
+      "id": "fetch-price",
+      "name": "Fetch Live Price",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const trade = $('Fetch Active Trades').item.json;\nconst priceData = $input.first().json;\nconst currentPrice = parseFloat(priceData.ltp || priceData.price || trade.current_price || trade.entry_price);\n\nconst entryPrice   = parseFloat(trade.entry_price);\nconst sl           = parseFloat(trade.sl);\nconst target       = parseFloat(trade.current_target);\nconst trailingPct  = parseFloat(trade.trailing_pct || 0.5);\nconst highest      = Math.max(parseFloat(trade.highest_price || entryPrice), currentPrice);\nconst pnl          = parseFloat((currentPrice - entryPrice).toFixed(2));\nconst pnlPct       = parseFloat(((pnl / entryPrice) * 100).toFixed(4));\n\nlet action = 'UPDATE';\nlet newSL = sl;\nlet newTarget = target;\nlet newStatus = trade.status;\nlet exitReason = null;\n\n// CHECK STOP LOSS\nif (currentPrice <= sl) {\n  action = 'CLOSE';\n  newStatus = 'STOP_LOSS_HIT';\n  exitReason = 'SL Hit';\n}\n// CHECK TARGET\nelse if (currentPrice >= target) {\n  action = 'TRAIL';\n  newStatus = 'TRAILING';\n  const step = parseFloat((entryPrice * trailingPct / 100).toFixed(2));\n  newSL = trade.target_count === 0 ? entryPrice : parseFloat((target - step).toFixed(2));\n  newTarget = parseFloat((target + step).toFixed(2));\n}\n\nreturn [{\n  json: {\n    ...trade,\n    current_price: currentPrice,\n    highest_price: highest,\n    pnl, pnl_pct: pnlPct,\n    new_sl: newSL,\n    new_target: newTarget,\n    new_status: newStatus,\n    exit_reason: exitReason,\n    action\n  }\n}];"
+      },
+      "id": "evaluate-trade",
+      "name": "Evaluate SL / Target",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [{ "value1": "={{ $json.action }}", "value2": "CLOSE" }]
+        }
+      },
+      "id": "is-close",
+      "name": "Close Trade?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE trades SET status='{{ $json.new_status }}', exit_price={{ $json.current_price }}, exit_time=NOW(), pnl={{ $json.pnl }}, pnl_pct={{ $json.pnl_pct }}, exit_reason='{{ $json.exit_reason }}', duration_mins=EXTRACT(EPOCH FROM (NOW()-entry_time))/60, updated_at=NOW() WHERE id='{{ $json.id }}'",
+        "additionalFields": {}
+      },
+      "id": "close-trade",
+      "name": "Close Trade in DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1560, 100],
+      "credentials": { "postgres": { "id": "postgres-creds", "name": "PostgreSQL" } }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE trades SET sl={{ $json.new_sl }}, current_target={{ $json.new_target }}, status='{{ $json.new_status }}', target_count=target_count+1, current_price={{ $json.current_price }}, highest_price={{ $json.highest_price }}, pnl={{ $json.pnl }}, pnl_pct={{ $json.pnl_pct }}, updated_at=NOW() WHERE id='{{ $json.id }}'",
+        "additionalFields": {}
+      },
+      "id": "update-trailing",
+      "name": "Update Trailing / Regular",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1560, 300],
+      "credentials": { "postgres": { "id": "postgres-creds", "name": "PostgreSQL" } }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "trade_events",
+        "columns": "trade_id,event_type,price,old_sl,new_sl,old_target,new_target,pnl,notes",
+        "additionalFields": {}
+      },
+      "id": "log-event",
+      "name": "Log Trade Event",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1780, 200],
+      "credentials": { "postgres": { "id": "postgres-creds", "name": "PostgreSQL" } }
+    }
+  ],
+  "connections": {
+    "Every 5 Seconds":     { "main": [[{ "node": "Fetch Active Trades",      "type": "main", "index": 0 }]] },
+    "Fetch Active Trades": { "main": [[{ "node": "Has Active Trades?",       "type": "main", "index": 0 }]] },
+    "Has Active Trades?":  { "main": [[{ "node": "Fetch Live Price",         "type": "main", "index": 0 }], []] },
+    "Fetch Live Price":    { "main": [[{ "node": "Evaluate SL / Target",     "type": "main", "index": 0 }]] },
+    "Evaluate SL / Target":{ "main": [[{ "node": "Close Trade?",             "type": "main", "index": 0 }]] },
+    "Close Trade?": {
+      "main": [
+        [{ "node": "Close Trade in DB",       "type": "main", "index": 0 }],
+        [{ "node": "Update Trailing / Regular","type": "main", "index": 0 }]
+      ]
+    },
+    "Close Trade in DB":          { "main": [[{ "node": "Log Trade Event", "type": "main", "index": 0 }]] },
+    "Update Trailing / Regular":  { "main": [[{ "node": "Log Trade Event", "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "tags": ["chartink", "price", "monitor", "sl", "target"]
+}
