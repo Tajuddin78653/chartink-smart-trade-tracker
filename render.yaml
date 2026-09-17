@@ -1,0 +1,139 @@
+# ============================================================
+# Chartink Smart Trade Tracker — Render.com IaC
+# Deploy everything with one click from GitHub
+# ============================================================
+
+databases:
+  # ── PostgreSQL ─────────────────────────────────────────
+  - name: chartink-postgres
+    databaseName: chartink_tracker
+    user: cstt_user
+    plan: free
+    region: singapore
+
+  # ── Redis ──────────────────────────────────────────────
+  - name: chartink-redis
+    plan: free
+    region: singapore
+
+services:
+  # ── Backend API (Node.js + Express) ────────────────────
+  - type: web
+    name: chartink-backend
+    region: singapore
+    plan: free
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node src/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: chartink-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: chartink-redis
+          type: redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        fromService:
+          name: chartink-frontend
+          type: web
+          property: host
+      - key: BROKER
+        value: dhan
+      - key: DHAN_ACCESS_TOKEN
+        sync: false
+      - key: DHAN_CLIENT_ID
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: UPSTOX_ACCESS_TOKEN
+        sync: false
+      - key: ZERODHA_ACCESS_TOKEN
+        sync: false
+
+  # ── Frontend (Next.js 15) ───────────────────────────────
+  - type: web
+    name: chartink-frontend
+    region: singapore
+    plan: free
+    runtime: node
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          name: chartink-backend
+          type: web
+          property: host
+      - key: NEXT_PUBLIC_WS_URL
+        fromService:
+          name: chartink-backend
+          type: web
+          property: host
+
+  # ── N8N Workflow Engine ─────────────────────────────────
+  - type: web
+    name: chartink-n8n
+    region: singapore
+    plan: free
+    runtime: docker
+    dockerfilePath: ./n8n/Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      - key: N8N_HOST
+        fromService:
+          name: chartink-n8n
+          type: web
+          property: host
+      - key: N8N_PORT
+        value: 5678
+      - key: N8N_PROTOCOL
+        value: https
+      - key: N8N_BASIC_AUTH_ACTIVE
+        value: "true"
+      - key: N8N_USER
+        value: admin
+      - key: N8N_PASSWORD
+        generateValue: true
+      - key: DB_TYPE
+        value: postgresdb
+      - key: DB_POSTGRESDB_HOST
+        fromDatabase:
+          name: chartink-postgres
+          property: host
+      - key: DB_POSTGRESDB_PORT
+        fromDatabase:
+          name: chartink-postgres
+          property: port
+      - key: DB_POSTGRESDB_DATABASE
+        fromDatabase:
+          name: chartink-postgres
+          property: database
+      - key: DB_POSTGRESDB_USER
+        fromDatabase:
+          name: chartink-postgres
+          property: user
+      - key: DB_POSTGRESDB_PASSWORD
+        fromDatabase:
+          name: chartink-postgres
+          property: password
+      - key: N8N_ENCRYPTION_KEY
+        generateValue: true
+      - key: WEBHOOK_URL
+        fromService:
+          name: chartink-n8n
+          type: web
+          property: host
