@@ -66,9 +66,9 @@ app.use('/api/webhook', webhookRoutes);          // Chartink posts here — no a
 app.get('/api/health',  (_req, res) => res.json({ status: 'ok', uptime: process.uptime(), time: new Date() }));
 
 // ── Protected Routes (JWT required) ──────────────────────
-app.use('/api/trades',    authenticate, tradeRoutes);
+app.use('/api/trades',    tradeRoutes);              // public — dashboard reads this
 app.use('/api/settings',  authenticate, authorize('admin'), settingsRoutes);
-app.use('/api/analytics', authenticate, analyticsRoutes);
+app.use('/api/analytics', analyticsRoutes);          // public — dashboard reads this
 
 // ── 404 Handler ───────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
