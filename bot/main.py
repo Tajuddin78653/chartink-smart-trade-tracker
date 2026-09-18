@@ -2,12 +2,14 @@
 main.py — Entry point for the Dhan-Chartink Auto Trader.
 
 Startup sequence:
-  1. Load instrument master (Dhan CSV)
-  2. Start order monitor thread (watches open positions 24/7)
-  3. Start Telegram bot polling (runs forever, processes signals during market hours)
+  1. Start health server (required for Render web service)
+  2. Load instrument master (Dhan CSV)
+  3. Start order monitor thread (watches open positions 24/7)
+  4. Start Telegram bot polling (runs forever, processes signals during market hours)
 """
 
 import sys
+from health_server import start_health_server
 from instrument_master import load_instruments
 from order_monitor import start_monitor
 from telegram_listener import build_app
@@ -20,7 +22,10 @@ def main():
     log_info("  🚀 Dhan Chartink Auto Trader — Starting Up")
     log_info("=" * 60)
 
-    # Step 1: Load Dhan instrument master (symbol → security_id)
+    # Step 1: Start health server (Render needs a port to bind)
+    start_health_server()
+
+    # Step 2: Load Dhan instrument master (symbol → security_id)
     log_info("Step 1: Loading instrument master...")
     try:
         load_instruments()

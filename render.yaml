@@ -118,8 +118,8 @@ services:
           type: web
           property: host
 
-  # ── Dhan Telegram Bot (Background Worker) ────────────────
-  - type: worker
+  # ── Dhan Telegram Bot (Web Service — free plan compatible) ─
+  - type: web
     name: dhan-bot
     region: singapore
     plan: free
@@ -127,6 +127,7 @@ services:
     rootDir: bot
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
+    healthCheckPath: /health
     envVars:
       - key: DHAN_CLIENT_ID
         sync: false
