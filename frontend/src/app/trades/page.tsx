@@ -4,8 +4,8 @@ import { io } from 'socket.io-client';
 import TradeCard from '@/components/TradeCard';
 import axios from 'axios';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-const WS  = process.env.NEXT_PUBLIC_WS_URL  || 'http://localhost:4000';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://chartink-backend.onrender.com';
+const WS  = process.env.NEXT_PUBLIC_WS_URL  || 'https://chartink-backend.onrender.com';
 
 export default function TradesPage() {
   const [trades, setTrades] = useState<any[]>([]);

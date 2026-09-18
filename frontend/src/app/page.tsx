@@ -7,8 +7,8 @@ import ClosedTradesTable from '@/components/ClosedTradesTable';
 import ToastNotification from '@/components/ToastNotification';
 import axios from 'axios';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-const WS  = process.env.NEXT_PUBLIC_WS_URL  || 'http://localhost:4000';
+const API = process.env.NEXT_PUBLIC_API_URL || 'https://chartink-backend.onrender.com';
+const WS  = process.env.NEXT_PUBLIC_WS_URL  || 'https://chartink-backend.onrender.com';
 
 export default function Dashboard() {
   const [activeTrades, setActiveTrades]   = useState<any[]>([]);
