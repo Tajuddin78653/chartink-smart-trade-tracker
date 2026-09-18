@@ -1,0 +1,9 @@
+# Environment variables — NEVER commit this file to GitHub!
+# Copy from .env.example and fill in your real values.
+.env
+instruments.csv
+trades.log
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store

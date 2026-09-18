@@ -117,3 +117,36 @@ services:
           name: chartink-n8n
           type: web
           property: host
+
+  # ── Dhan Telegram Bot (Background Worker) ────────────────
+  - type: worker
+    name: dhan-bot
+    region: singapore
+    plan: free
+    runtime: python
+    rootDir: bot
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: DHAN_CLIENT_ID
+        sync: false
+      - key: DHAN_ACCESS_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHANNEL_ID
+        sync: false
+      - key: BACKEND_URL
+        fromService:
+          name: chartink-backend
+          type: web
+          property: host
+      - key: PRODUCT_TYPE
+        value: INTRADAY
+      - key: TARGET_PCT
+        value: "1.0"
+      - key: SL_PCT
+        value: "1.0"
+      - key: MONITOR_INTERVAL_SEC
+        value: "30"
+
