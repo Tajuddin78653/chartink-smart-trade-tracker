@@ -69,8 +69,8 @@ services:
     plan: free
     runtime: node
     rootDir: frontend
-    buildCommand: npm install && npm run build
-    startCommand: npm start
+    buildCommand: "npm install && npm run build"
+    startCommand: "npm start"
     envVars:
       - key: NEXT_PUBLIC_API_URL
         fromService:
