@@ -6,10 +6,21 @@ const { sendNotification } = require('../services/notificationService');
 
 /**
  * POST /api/webhook/chartink
- * Public endpoint — receives Chartink scanner alerts
+ * Receives Chartink scanner alerts.
+ * If WEBHOOK_API_KEY env var is set, the request must supply a matching
+ * x-api-key header. If the env var is unset, the endpoint is open (backward-compatible).
  * Payload: { symbol, exchange, ltp, signal, scan_name, alert_time }
  */
 router.post('/chartink', async (req, res) => {
+  // --- API key authentication ---
+  const expectedKey = process.env.WEBHOOK_API_KEY;
+  if (expectedKey) {
+    const providedKey = req.headers['x-api-key'];
+    if (!providedKey || providedKey !== expectedKey) {
+      return res.status(401).json({ error: 'Unauthorized: invalid or missing x-api-key' });
+    }
+  }
+
   try {
     const { symbol, exchange = 'NSE', ltp, signal = 'BUY', scan_name, alert_time } = req.body;
 

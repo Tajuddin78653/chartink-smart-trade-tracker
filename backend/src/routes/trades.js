@@ -2,10 +2,19 @@ const express = require('express');
 const router  = express.Router();
 const { query } = require('../db/postgres');
 
-// GET /api/trades — active trades
+// GET /api/trades — list trades with filters
 router.get('/', async (req, res) => {
   try {
-    const { status, symbol, date_from, date_to, limit = 50, offset = 0 } = req.query;
+    const { status, symbol, date_from, date_to } = req.query;
+
+    // --- SQL injection guard: parse and clamp limit/offset ---
+    const rawLimit  = parseInt(req.query.limit,  10);
+    const rawOffset = parseInt(req.query.offset, 10);
+    if (req.query.limit  !== undefined && isNaN(rawLimit))  return res.status(400).json({ error: 'limit must be an integer' });
+    if (req.query.offset !== undefined && isNaN(rawOffset)) return res.status(400).json({ error: 'offset must be an integer' });
+    const limit  = Math.min(Math.max(isNaN(rawLimit)  ? 50  : rawLimit,  1), 1000);
+    const offset = Math.max(isNaN(rawOffset) ? 0 : rawOffset, 0);
+
     let conditions = []; let params = [];
 
     if (status)    { conditions.push(`status = $${params.length+1}`);      params.push(status); }
@@ -39,7 +48,7 @@ router.get('/active', async (_req, res) => {
 // GET /api/trades/:id — single trade with events
 router.get('/:id', async (req, res) => {
   try {
-    const trade = await query('SELECT * FROM trades WHERE trade_id=$1 OR id=$1', [req.params.id]);
+    const trade = await query('SELECT * FROM trades WHERE trade_id=$1 OR id::text=$1', [req.params.id]);
     if (!trade.rows.length) return res.status(404).json({ error: 'Trade not found' });
     const events = await query('SELECT * FROM trade_events WHERE trade_id=$1 ORDER BY event_time', [trade.rows[0].id]);
     res.json({ ...trade.rows[0], events: events.rows });

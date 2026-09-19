@@ -3,6 +3,8 @@ order_monitor.py — Monitors an open position every N seconds.
 Exits when price hits 1% target OR 1% stop loss.
 
 Runs in a background thread so Telegram listener stays responsive.
+The loop is wrapped in an outer try/except so any unexpected exception
+restarts it instead of dying silently.
 """
 
 import time
@@ -21,14 +23,13 @@ def _monitor_loop():
     """
     log_info("🔍 Order monitor started.")
     while True:
-        position = capital_manager.get_position()
-
-        if position is None:
-            # No open position — check again after interval
-            time.sleep(MONITOR_INTERVAL_SEC)
-            continue
-
         try:
+            position = capital_manager.get_position()
+
+            if position is None:
+                time.sleep(MONITOR_INTERVAL_SEC)
+                continue
+
             ltp = get_ltp(position.security_id)
 
             if ltp is None:
@@ -48,12 +49,30 @@ def _monitor_loop():
                 reason = "SL HIT ❌"
 
             if reason:
-                # Place exit SELL order on Dhan
-                place_sell_order(
+                # Place exit SELL order on Dhan — retry once on failure
+                sell_resp = place_sell_order(
                     symbol=position.symbol,
                     security_id=position.security_id,
                     quantity=position.quantity,
                 )
+                if sell_resp is None:
+                    log_error(
+                        f"place_sell_order failed for {position.symbol}, retrying once…"
+                    )
+                    time.sleep(2)
+                    sell_resp = place_sell_order(
+                        symbol=position.symbol,
+                        security_id=position.security_id,
+                        quantity=position.quantity,
+                    )
+                    if sell_resp is None:
+                        log_error(
+                            f"place_sell_order retry also failed for {position.symbol}. "
+                            "Position NOT closed — will retry on next tick."
+                        )
+                        time.sleep(MONITOR_INTERVAL_SEC)
+                        continue
+
                 pnl = (ltp - position.buy_price) * position.quantity
                 log_exit(
                     symbol=position.symbol,
@@ -73,7 +92,9 @@ def _monitor_loop():
                 capital_manager.close_position()
 
         except Exception as e:
-            log_error("Error in order monitor loop", e)
+            log_error("Unexpected error in order monitor loop — restarting loop", e)
+            time.sleep(MONITOR_INTERVAL_SEC)
+            continue
 
         time.sleep(MONITOR_INTERVAL_SEC)
 

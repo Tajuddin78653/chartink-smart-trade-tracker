@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "test": "jest --testPathPattern=tests/ --forceExit --detectOpenHandles"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testTimeout": 10000
+  }
+}

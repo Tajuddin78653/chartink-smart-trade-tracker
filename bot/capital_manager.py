@@ -7,7 +7,7 @@ Rules:
   - After exit, capital is freed and the next signal can be taken.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 import threading
 from logger import log_info
@@ -22,7 +22,6 @@ class Position:
     target_price: float
     sl_price: float
     order_id: str = ""
-    tradedash_trade_id: str = ""   # TradeDash DB trade ID for sync
 
 
 class CapitalManager:
@@ -43,8 +42,15 @@ class CapitalManager:
         target_pct: float,
         sl_pct: float,
         order_id: str = "",
-    ) -> Position:
+    ) -> Optional[Position]:
         with self._lock:
+            # Atomic check-and-set: reject duplicate opens under the same lock
+            if self._position is not None:
+                log_info(
+                    f"⚠️  Position already open ({self._position.symbol}), "
+                    f"ignoring new signal for {symbol}"
+                )
+                return None
             target = round(buy_price * (1 + target_pct / 100), 2)
             sl     = round(buy_price * (1 - sl_pct / 100), 2)
             self._position = Position(
