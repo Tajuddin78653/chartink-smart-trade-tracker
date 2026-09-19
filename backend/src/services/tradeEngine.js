@@ -64,26 +64,11 @@ const processPriceUpdate = async (trade, currentPrice, settings, io) => {
     return;
   }
 
-  // ── TARGET HIT ────────────────────────────────────────
+  // ── TARGET HIT → AUTO EXIT ────────────────────────────
   if (price >= target) {
-    const newSL     = trade.target_count === 0 ? entry : parseFloat(trade.current_target) - parseFloat((entry * settings.trailing_pct / 100)).toFixed(2);
-    const newTarget = parseFloat((target + entry * settings.trailing_pct / 100).toFixed(2));
-    const newCount  = trade.target_count + 1;
-    const newStatus = 'TRAILING';
-
-    await query(`
-      UPDATE trades SET
-        sl = $1, current_target = $2, target_count = $3,
-        highest_price = $4, current_price = $5, pnl = $6,
-        pnl_pct = $7, status = $8, updated_at = NOW()
-      WHERE id = $9`,
-      [newSL, newTarget, newCount, highest, price, pnl, pnlPct, newStatus, trade.id]
-    );
-
-    await logTradeEvent(trade.id, `TARGET_${newCount}_HIT`, price, sl, newSL, target, newTarget, pnl, `Target ${newCount} hit. SL moved.`);
-
-    if (io) io.emit('trade_update', { ...trade, sl: newSL, current_target: newTarget, status: newStatus, pnl, pnl_pct: pnlPct });
-    if (io) io.emit('notification', { type: 'TARGET_HIT', trade_id: trade.trade_id, symbol: trade.symbol, pnl_pct: pnlPct });
+    const newCount = trade.target_count + 1;
+    await logTradeEvent(trade.id, `TARGET_${newCount}_HIT`, price, sl, null, target, null, pnl, `Target hit at ${price}. Auto-exit.`);
+    await closeTrade(trade, price, 'TARGET_HIT', 'TARGET_HIT', pnl, pnlPct, io);
     return;
   }
 
@@ -137,7 +122,7 @@ const getActiveTrades = async () => {
 // ── Get Settings ──────────────────────────────────────────
 const getSettings = async () => {
   const result = await query('SELECT * FROM settings LIMIT 1');
-  return result.rows[0] || { target_pct: 0.5, sl_pct: 1.5, trailing_pct: 0.5 };
+  return result.rows[0] || { target_pct: 1.0, sl_pct: 1.0, trailing_pct: 0.5 };
 };
 
 module.exports = { createTrade, processPriceUpdate, closeTrade, getActiveTrades, getSettings, calculateLevels };

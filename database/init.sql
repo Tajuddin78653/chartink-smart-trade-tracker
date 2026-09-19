@@ -20,8 +20,8 @@ CREATE TABLE IF NOT EXISTS users (
 -- ── Settings ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS settings (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    target_pct      DECIMAL(5,2) DEFAULT 0.5,
-    sl_pct          DECIMAL(5,2) DEFAULT 1.5,
+    target_pct      DECIMAL(5,2) DEFAULT 1.0,
+    sl_pct          DECIMAL(5,2) DEFAULT 1.0,
     trailing_pct    DECIMAL(5,2) DEFAULT 0.5,
     trading_start   TIME DEFAULT '09:15:00',
     trading_end     TIME DEFAULT '15:30:00',
@@ -139,7 +139,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_trade ON notifications(trade_id);
 
 -- ── Default Settings ──────────────────────────────────────
 INSERT INTO settings (target_pct, sl_pct, trailing_pct, trading_start, trading_end, broker)
-VALUES (0.5, 1.5, 0.5, '09:15:00', '15:30:00', 'dhan')
+VALUES (1.0, 1.0, 0.5, '09:15:00', '15:30:00', 'dhan')
 ON CONFLICT DO NOTHING;
 
 -- ── Default Admin User (change password after setup!) ─────
