@@ -38,7 +38,7 @@
     },
     {
       "parameters": {
-        "url": "=http://backend:4000/api/prices/{{ $json.symbol }}",
+        "url": "=https://chartink-backend.onrender.com/api/prices/{{ $json.symbol }}",
         "options": { "timeout": 4000 }
       },
       "id": "fetch-price",
