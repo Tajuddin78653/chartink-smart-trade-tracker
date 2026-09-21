@@ -6,63 +6,91 @@ const { sendNotification } = require('../services/notificationService');
 
 /**
  * POST /api/webhook/chartink
- * Receives Chartink scanner alerts.
- * If WEBHOOK_API_KEY env var is set, the request must supply a matching
- * x-api-key header. If the env var is unset, the endpoint is open (backward-compatible).
- * Payload: { symbol, exchange, ltp, signal, scan_name, alert_time }
+ * Open endpoint — no API key required (Chartink does not support custom headers).
+ *
+ * Supports TWO payload formats:
+ *
+ * 1. Chartink native format:
+ *    { stocks: "RELIANCE:NSE,TCS:NSE", scan_name: "...", alert_name: "...",
+ *      trigger_prices: "2845,3500", triggered_at: "..." }
+ *
+ * 2. Direct format (for testing):
+ *    { symbol: "RELIANCE", exchange: "NSE", ltp: 2845, scan_name: "..." }
  */
 router.post('/chartink', async (req, res) => {
-  // --- API key authentication ---
-  const expectedKey = process.env.WEBHOOK_API_KEY;
-  if (expectedKey) {
-    const providedKey = req.headers['x-api-key'];
-    if (!providedKey || providedKey !== expectedKey) {
-      return res.status(401).json({ error: 'Unauthorized: invalid or missing x-api-key' });
-    }
-  }
-
   try {
-    const { symbol, exchange = 'NSE', ltp, signal = 'BUY', scan_name, alert_time } = req.body;
+    const body = req.body;
+    const settings = await getSettings();
+    const trades   = [];
 
-    // Basic validation
-    if (!symbol || !ltp) {
-      return res.status(400).json({ error: 'symbol and ltp are required' });
+    // ── Parse Chartink native format ──────────────────────
+    if (body.stocks) {
+      const stockList     = body.stocks.split(',').map(s => s.trim()).filter(Boolean);
+      const priceList     = body.trigger_prices
+        ? body.trigger_prices.toString().split(',').map(p => parseFloat(p.trim()))
+        : [];
+      const scanName      = body.scan_name || body.alert_name || 'Chartink Scanner';
+      const alertTime     = body.triggered_at || new Date();
+
+      for (let i = 0; i < stockList.length; i++) {
+        const parts    = stockList[i].split(':');
+        const symbol   = parts[0].trim().toUpperCase();
+        const exchange = parts[1] ? parts[1].trim().toUpperCase() : 'NSE';
+        const ltp      = priceList[i] || priceList[0] || 0;
+
+        if (!symbol) continue;
+
+        const alertResult = await query(`
+          INSERT INTO alerts (symbol, exchange, ltp, signal, scan_name, alert_time, raw_payload)
+          VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+          [symbol, exchange, ltp, 'BUY', scanName, alertTime, JSON.stringify(body)]
+        );
+        const alert = alertResult.rows[0];
+        const trade = await createTrade(alert, settings);
+        await query('UPDATE alerts SET processed=true WHERE id=$1', [alert.id]);
+
+        if (req.io) {
+          req.io.emit('new_trade', trade);
+          req.io.emit('notification', {
+            type: 'ENTRY_CREATED', symbol: trade.symbol,
+            entry_price: trade.entry_price, sl: trade.sl,
+            target: trade.current_target, scan_name: trade.scan_name
+          });
+        }
+        await sendNotification('ENTRY_CREATED', trade);
+        trades.push({ trade_id: trade.trade_id, symbol: trade.symbol, entry: trade.entry_price, sl: trade.sl, target: trade.current_target });
+      }
+
+      return res.status(201).json({ success: true, trades_created: trades.length, trades });
     }
 
-    // Store raw alert
+    // ── Direct / test format ───────────────────────────────
+    const { symbol, exchange = 'NSE', ltp, signal = 'BUY', scan_name, alert_time } = body;
+
+    if (!symbol || !ltp) {
+      return res.status(400).json({ error: 'Provide either "stocks" (Chartink format) or "symbol"+"ltp"' });
+    }
+
     const alertResult = await query(`
       INSERT INTO alerts (symbol, exchange, ltp, signal, scan_name, alert_time, raw_payload)
       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [symbol.toUpperCase(), exchange, parseFloat(ltp), signal, scan_name, alert_time || new Date(), JSON.stringify(req.body)]
+      [symbol.toUpperCase(), exchange, parseFloat(ltp), signal, scan_name, alert_time || new Date(), JSON.stringify(body)]
     );
     const alert = alertResult.rows[0];
-
-    // Get current settings
-    const settings = await getSettings();
-
-    // Create trade position
     const trade = await createTrade(alert, settings);
-
-    // Mark alert as processed
     await query('UPDATE alerts SET processed=true WHERE id=$1', [alert.id]);
 
-    // Emit real-time event
     if (req.io) {
       req.io.emit('new_trade', trade);
       req.io.emit('notification', {
-        type: 'ENTRY_CREATED',
-        symbol: trade.symbol,
-        entry_price: trade.entry_price,
-        sl: trade.sl,
-        target: trade.current_target,
-        scan_name: trade.scan_name
+        type: 'ENTRY_CREATED', symbol: trade.symbol,
+        entry_price: trade.entry_price, sl: trade.sl,
+        target: trade.current_target, scan_name: trade.scan_name
       });
     }
-
-    // Send notifications
     await sendNotification('ENTRY_CREATED', trade);
 
-    res.status(201).json({ success: true, trade_id: trade.trade_id, trade });
+    return res.status(201).json({ success: true, trade_id: trade.trade_id, trade });
 
   } catch (err) {
     console.error('Webhook error:', err);
